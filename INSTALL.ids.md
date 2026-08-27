@@ -43,6 +43,26 @@ BSDI 2.0:
    # adduser -g qmail -H/var/qmail -G,,, -s/dev/null -P'*' qmails
    ```
 
+OpenBSD 7.9:
+
+   Create a login class for the processes:
+
+   ` grep '^qmaildaemon:' /etc/login.conf || printf '\nqmaildaemon:\\\n\t:nologin=/var/qmail/nologin:\\\n\t:datasize=256M:\\\n\t:maxproc=64:\\\n\t:openfiles-max=1024:\\\n\t:openfiles-cur=16:\\\n\t:stacksize-max=64M:\\\n\t:stacksize-cur=8M:\\\n\t:auth=reject:\\\n\t:path=/package/mail/qmail/bin:\\\n\t:umask=400:\\\n\n' >> /etc/login.conf `
+
+   Find a tidy place to put the ids
+
+   ```
+   export ID_START=500 ID_END=550
+   groupadd -g 65534 _nofiles
+   groupadd -g ${ID_START} _qmail
+   useradd -r ${ID_START}..${ID_END} -g _qmail -d /var/qmail -s /sbin/nologin -L qmaildaemon -c "Qmail queue access" _qmailq
+   useradd -r ${ID_START}..${ID_END} -g _qmail -d /var/qmail -s /sbin/nologin -L qmaildaemon -c "Qmail remote" _qmailr
+   useradd -r ${ID_START}..${ID_END} -g _qmail -d /var/qmail -s /sbin/nologin -L qmaildaemon -c "Qmail scheduler" _qmails
+   useradd -r ${ID_START}..${ID_END} -g _nofiles -d /var/qmail/alias -s /sbin/nologin -L qmaildaemon -c "Qmail aliases owner" _alias
+   useradd -r ${ID_START}..${ID_END} -g _nofiles -d /var/qmail -s /sbin/nologin -L qmaildaemon -c "Qmail network daemon" _qmaild
+   useradd -r ${ID_START}..${ID_END} -g _nofiles -d /var/qmail -s /sbin/nologin -L qmaildaemon -c "Qmail logger" _qmaill
+   useradd -r ${ID_START}..${ID_END} -g _nofiles -d /var/qmail -s /sbin/nologin -L qmaildaemon -c "Qmail pop/remote access" _qmailp
+   ```
 AIX:
 
    ```
