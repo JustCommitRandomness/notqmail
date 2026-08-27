@@ -1,11 +1,11 @@
-alias
-qmaild
-qmaill
+_alias
+_qmaild
+_qmaill
 root
-qmailp
-qmailq
-qmailr
-qmails
+_qmailp
+_qmailq
+_qmailr
+_qmails
 
 The qmail system is heavily partitioned for security; it does almost
 nothing as root.
