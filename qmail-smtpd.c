@@ -25,12 +25,16 @@
 #include "timeoutread.h"
 #include "timeoutwrite.h"
 #include "commands.h"
+#include "select.h"
 #include "qmail-spp.h"
 
 int spp_val;
 
 #define MAXHOPS 100
 unsigned int databytes = 0;
+unsigned int hide_pipelining = 0;
+unsigned int check_pipelining = 0;
+unsigned int block_pipelining = 0;
 int timeout = 1200;
 
 GEN_SAFE_TIMEOUTWRITE(safewrite,timeout,fd,_exit(1))
@@ -57,8 +61,11 @@ void err_wantrcpt() { out("503 RCPT first (#5.5.1)\r\n"); }
 void err_noop(arg) char *arg; { out("250 ok\r\n"); }
 void err_vrfy(arg) char *arg; { out("252 send some mail, i'll try my best\r\n"); }
 void err_qqt() { out("451 qqt failure (#4.3.0)\r\n"); }
-
-
+void err_pipelining() {
+  out("503 5.5.1 Command out of sequence (Pipelining not supported)\r\n");
+  flush();
+  _exit(1);
+}
 stralloc greeting = {0};
 
 void smtp_greet(code) char *code;
@@ -122,6 +129,11 @@ void setup()
   if (x) { scan_ulong(x,&u); databytes = u; }
   if (!(databytes + 1)) --databytes;
  
+  if (env_get("CHECKPIPELINING")) check_pipelining = 1;
+  if (env_get("BLOCKPIPELINING")) block_pipelining = 1;
+  if (env_get("PIPELININGBAD"))   hide_pipelining = check_pipelining = 1;
+  if (env_get("PIPELININGEVIL"))  hide_pipelining = block_pipelining = 1;
+
   remoteip = env_get("TCPREMOTEIP");
   if (!remoteip) remoteip = "unknown";
   local = env_get("TCPLOCALHOST");
@@ -197,6 +209,33 @@ char *arg;
   return 1;
 }
 
+int pipeliningcheck()
+{
+  fd_set readfds, exceptfds;
+  struct timeval timeout;
+
+  // return 1 if not checking for pipelining
+  if(!(check_pipelining||block_pipelining)) return 1;
+
+  FD_ZERO(&readfds);
+  FD_ZERO(&exceptfds);
+  FD_SET(0,&readfds);
+  FD_SET(0,&exceptfds);
+  FD_SET(1,&exceptfds);
+
+  // if there are any data on the read pipe, then
+  memset(&timeout,0,sizeof(timeout));
+  if(select(2,&readfds,NULL,&exceptfds,&timeout) <= 0)
+    return 1;
+
+  if (block_pipelining) return 0;
+
+  env_put2("QMAIL_PIPELINING","");
+  check_pipelining = 0; //found pipelining, don't need to bother any more
+  return 1;
+
+}
+
 int bmfcheck()
 {
   int j;
@@ -232,7 +271,10 @@ void smtp_helo(arg) char *arg;
 void smtp_ehlo(arg) char *arg;
 {
   if(!spp_helo(arg)) return;
-  smtp_greet("250-"); out("\r\n250-PIPELINING\r\n250 8BITMIME\r\n");
+  smtp_greet("250-"); out("\r\n");
+  if(!hide_pipelining) out("250-PIPELINING\r\n");
+  if(!pipeliningcheck()) err_pipelining();
+  out("250 8BITMIME\r\n");
   seenmail = 0; dohelo(arg);
 }
 void smtp_rset(arg) char *arg;
@@ -272,6 +314,7 @@ void smtp_rcpt(arg) char *arg; {
   if (!stralloc_cats(&rcptto,"T")) die_nomem();
   if (!stralloc_cats(&rcptto,addr.s)) die_nomem();
   if (!stralloc_0(&rcptto)) die_nomem();
+  if(!pipeliningcheck()) err_pipelining();
   out("250 ok\r\n");
 }
 
@@ -387,6 +430,7 @@ void smtp_data(arg) char *arg; {
   if (databytes) bytestooverflow = databytes + 1;
   if (qmail_open(&qqt) == -1) { err_qqt(); return; }
   qp = qmail_qp(&qqt);
+  if(!pipeliningcheck()) err_pipelining();
   out("354 go ahead\r\n");
  
   received(&qqt,"SMTP",local,remoteip,remotehost,remoteinfo,fakehelo);
