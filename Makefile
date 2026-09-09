@@ -1,7 +1,7 @@
 # Don't edit Makefile! Use conf-* for configuration.
 
 SHELL=/bin/sh
-NROFF=nroff
+NROFF=mandoc
 RELEASE_VERSION=1.09
 
 default: it
